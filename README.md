@@ -16,7 +16,7 @@ the script into your backend with your dear old friend, Python.
 Once you've integrated this "universal" wallet, you can begin to manage billions of addresses across 300+ coins, giving
 you a serious edge against the competition.
 
-In this assignment, however, you will only need to get 2 coins working: Ethereum and Bitcoin Testnet.
+In this assignment, however, I will only need to get 2 coins working: Ethereum and Bitcoin Testnet.
 Ethereum keys are the same format on any network, so the Ethereum keys should work with your custom networks or testnets.
 
 ## Dependencies
@@ -51,7 +51,7 @@ Your directory tree should look something like this:
 
 ![directory-tree](Images/tree.png)
 
-### Setup constants
+### 1. Setup constants
 
 - In a separate file, `constants.py`, set the following constants:
   - `BTC = 'btc'`
@@ -62,14 +62,18 @@ Your directory tree should look something like this:
 
 - Use these anytime you reference these strings, both in function calls, and in setting object keys.
 
-### Generate a Mnemonic
+### 2. Generate a Mnemonic
 
 - Generate a new 12 word mnemonic using `hd-wallet-derive` or by using [this tool](https://iancoleman.io/bip39/).
 
 - Set this mnemonic as an environment variable, and include the one you generated as a fallback using:
   `mnemonic = os.getenv('MNEMONIC', 'insert mnemonic here')`
 
-### Deriving the wallet keys
+```python
+mnemonic = os.getenv('MNEMONIC')
+print(mnemonic)
+```
+### 3. Deriving the wallet keys
 
 - Use the `subprocess` library to call the `./derive` script from Python. Make sure to properly wait for the process.
 
@@ -85,11 +89,20 @@ Your directory tree should look something like this:
 - Create an object called `coins` that derives `ETH` and `BTCTEST` wallets with this function.
   When done properly, the final object should look something like this (there are only 3 children each in this image):
 
-![wallet-object](Images/wallet-object.png)
-
+```python
+def derive_wallets(mnem,coinname,num):
+    command = './derive -g --mnemonic="'+str(mnem)+'"   --numderive=""'+str(num)+'"" --coin=""'+str(coinname)+'"" --format=jsonpretty'
+    p = subprocess.Popen(command,stdout=subprocess.PIPE,shell=True)
+    (output, err) = p.communicate()
+    return json.loads(output)
+```
+```python
+coins = {ETH:derive_wallets(mnem=mnemonic,coinname=ETH,num=3),BTCTEST: derive_wallets(mnem=mnemonic,coinname=BTCTEST,num=3)}
+![wallet-object](Images/drivekeys.png)
+```
 You should now be able to select child accounts (and thus, private keys) by calling `coins[COINTYPE][INDEX]['privkey']`.
 
-### Linking the transaction signing libraries
+### POW Linking the transaction signing libraries
 
 Now, we need to use `bit` and `web3.py` to leverage the keys we've got in the `coins` object.
 You will need to create three more functions:
@@ -114,8 +127,6 @@ You will need to create three more functions:
   - `to` -- the recipient address.
   - `amount` -- the amount of the coin to send.
 
-  You will need to check the coin, then return one of the following functions based on the library:
-
   - For `ETH`, return an object containing `to`, `from`, `value`, `gas`, `gasPrice`, `nonce`, and `chainID`.
     Make sure to calculate all of these values properly using `web3.py`!
   - For `BTCTEST`, return `PrivateKeyTestnet.prepare_transaction(account.address, [(to, amount, BTC)])`
@@ -138,11 +149,58 @@ You will need to create three more functions:
 
   - For `ETH`, return `w3.eth.sendRawTransaction(signed.rawTransaction)`
   - For `BTCTEST`, return `NetworkAPI.broadcast_tx_testnet(signed)`
+```python
+def priv_key_to_account (coin, priv_key):
+    if coin == ETH:
+        return Account.privateKeyToAccount(priv_key)
+    if coin == BTCTEST:
+        return PrivateKeyTestnet(priv_key)
 
-### Send some transactions!
+def create_raw_tx(account, recipient, amount):
+    gasEstimate = web3.eth.estimateGas(
+        {"from": account.address, "to": recipient, "value": amount}
+    )
+    return {
+        "from": account.address,
+        "to": recipient,
+        "value": amount,
+        "gasPrice": web3.eth.gasPrice,
+        "gas": gasEstimate,
+        "nonce": web3.eth.getTransactionCount(account.address),
+    }
+def create_tx(coin,account,to,amount):
+    if (coin==ETH):
+        return create_raw_tx(account,to,amount)
+    else:
+        return PrivateKeyTestnet.prepare_transaction(account.address, [(to, amount, BTC)])
+  You will need to check the coin, then return one of the following functions based on the library:
 
-Now, you should be able to fund these wallets using testnet faucets. Open up a new terminal window inside of `wallet`,
-then run `python`. Within the Python shell, run `from wallet import *` -- you can now access the functions interactively.
+def send_tx (coin, account, recipient, amount):
+    if coin =='ETH':
+        trxns_eth = create_tx(coin,account, recipient, amount)
+        sign_trxns_eth = account.sign_transaction(trxns_eth)
+        result = w3.eth.sendRawTransaction(sign_trxns_eth.rawTransaction)
+        print(result.hex())
+        return result.hex()
+    else:
+        trxns_btctest= create_tx(coin,account,recipient,amount)
+        sign_trxns_btctest = account.sign_transaction(trxns_btctest)
+        NetworkAPI.broadcast_tx_testnet(sign_trxns_btctest)       
+        return tx_hex
+
+```
+
+
+
+### Sending Transactions
+
+For Bitcoin: Now, you should be able to fund these wallets using testnet faucets. Open up a new terminal window inside of `wallet`,
+then run `python`. Within the Python shell, run
+
+```python
+`from wallet import *`
+```
+-- you can now access the functions interactively.
 You'll need to set the account with  `priv_key_to_account` and use `send_tx` to send transactions.
 
 #### Bitcoin Testnet transaction
@@ -155,47 +213,67 @@ You'll need to set the account with  `priv_key_to_account` and use `send_tx` to 
 
 - Screenshot the confirmation of the transaction like so:
 
-![btc-test](Images/btc-test.png)
+![btc-test](Images/btctestsuccess.png)
 
 #### Local PoA Ethereum transaction
 
-- Add one of the `ETH` addresses to the pre-allocated accounts in your `networkname.json`.
+- Running with POA I found it diffuclt to use the above code instead I ran the below code in Python:
 
-- Delete the `geth` folder in each node, then re-initialize using `geth --datadir nodeX init networkname.json`.
-  This will create a new chain, and will pre-fund the new account.
+Steps for Local Set Up:
 
-- [Add the following middleware](https://web3py.readthedocs.io/en/stable/middleware.html#geth-style-proof-of-authority)
-  to `web3.py` to support the PoA algorithm:
+1. Add one of the `ETH` addresses to the pre-allocated accounts in your `networkname.json`. As well as to a sealer address to be a validator and be pre-funded.  
+2. Go to MyCrypto - for the pre-allocated accounts use the private key under your custom network to download the UTC-key. Create a password for the custom `ETH` address.
+3. Under 'Blockchain Tools' create a new folder node3 , I use node3 as I had origniall started two new accounts when intitliazing my nodes. See github link. (https://github.com/KeepItOnTheDownload/Multi-Blockchain_Wallet-)
+4. I add the UTC file I just downloaded into the folder and add a password.txt file for the password created in MyCrypto.
 
+- Delete the `geth` folder in each node that you ran previously (if you are starting from scratch then ingore this step), then re-initialize
+
+5.  Initialize the new node, and any other nodes that have been created.
+```Python
+#Tis will create a new chain, and will pre-fund the new account.
+`geth --datadir nodeX init networkname.json`.
 ```
-from web3.middleware import geth_poa_middleware
 
-w3.eth.setGasPriceStrategy(medium_gas_price_strategy)
+6. Mine the node with the address added
+
+```Python
+./geth --datadir node3 --mine --minerthreads 1 --unlock "df460bD851a7540c70BeE83E5bA1b63410c4F220" --password node3/password.txt  --rpc --allow-insecure-unlock
+```
+7. Mine the second node2 (created from a local new account) with the encoding address of node3
+```Python
+./geth --datadir node2 --unlock "22aD648e49B7E09148dCB29CF6a09888e6fB44E3" --mine --port 30305 --bootnodes enode://9027de1e56f0d03ee3ccc07e3860c1ba3154c3a07ccdc92bc4bed04b9b8bb41c48edea8862b089c132a86d1ff28c0926f48d9089e58965964a4a867c2259c29a@127.0.0.1:30303 --password node2/password.txt  --allow-insecure-unlock
 ```
 
-- Due to a bug in `web3.py`, you will need to send a transaction or two with MyCrypto first, since the
-  `w3.eth.generateGasPrice()` function does not work with an empty chain. You can use one of the `ETH` address `privkey`,
-  or one of the `node` keystore files.
+8. Use the following code in Python and check in MyCrypto using the hash if successful!
+
+```Python
+account1 = 'your account address'
+account2 = 'your account address'
+
+privatekey = 'account one private key'
+
+nonce = web3.eth.getTransactionCount(account1)
+
+tx = {
+    'nonce': nonce,
+    'to': account2,
+    'value': web3.toWei(10, 'ether'),
+    'gas': 2000000,
+    'gasPrice': web3.toWei('50', 'gwei'),
+}
+signed_tx = web3.eth.account.signTransaction(tx, privatekey)
+
+tx_hash = web3.eth.sendRawTransaction(signed_tx.rawTransaction)
+print(web3.toHex(tx_hash))
+```
+
 
 - Send a transaction from the pre-funded address within the wallet to another, then copy the `txid` into
   MyCrypto's TX Status, and screenshot the successful transaction like so:
 
-![eth-test](Images/eth-test.png)
+![eth-hash](Images/tx_has.png)
+![eth-test](Images/SUCCESSFUL.png)
 
-### Submission
-
-- Create a `README.md` that contains the test transaction screenshots, as well as the code used to send them.
-  Pair the screenshot with the line(s) of code.
-
-- Write a short description about what the wallet does, what is is built with, and how to use it.
-
-- Include installing pip dependencies using `requirements.txt`, as well as cloning and installing `hd-wallet-derive`.
-  You may include the `hd-wallet-derive` folder in your repo, but still include the install instructions. You do not
-  need to include Python or PHP installation instructions.
-
-- Upload the project to a new GitHub repository.
-
-- Celebrate the fact that you now have an incredibly powerful wallet that you can expand to hundreds of coins!
 
 ### Challenge Mode
 
