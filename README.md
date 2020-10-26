@@ -98,8 +98,9 @@ def derive_wallets(mnem,coinname,num):
 ```
 ```python
 coins = {ETH:derive_wallets(mnem=mnemonic,coinname=ETH,num=3),BTCTEST: derive_wallets(mnem=mnemonic,coinname=BTCTEST,num=3)}
-![wallet-object](Images/drivekeys.png)
 ```
+![wallet-object](Images/drivekeys.png)
+
 You should now be able to select child accounts (and thus, private keys) by calling `coins[COINTYPE][INDEX]['privkey']`.
 
 ### POW Linking the transaction signing libraries
